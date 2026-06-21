@@ -259,7 +259,6 @@ function Element:New(Idx, Config)
 		ScrollBarImageTransparency = 0.5,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
-		AutomaticCanvasSize = Enum.AutomaticCanvasSize.Y,
 	}, {
 		New("UIListLayout", {
 			Padding = UDim.new(0, 2),
@@ -375,6 +374,7 @@ function Element:New(Idx, Config)
 
 		-- cap the height: scroll instead of growing past the screen
 		local contentH = count * 26 + (count - 1) * 2
+		PickerHolder.CanvasSize = UDim2.new(0, 0, 0, contentH)
 		PickerHolder.Size = UDim2.new(1, 0, 0, math.min(contentH, PICKER_MAX_H))
 		PickerHolder.Visible = true
 
