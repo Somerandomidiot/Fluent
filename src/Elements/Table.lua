@@ -29,6 +29,8 @@ local New = Creator.New
 local AddSignal = Creator.AddSignal
 local Components = Root.Components
 
+local UserInputService = game:GetService("UserInputService")
+
 local ROW_H = 30
 
 local Element = {}
@@ -242,18 +244,31 @@ function Element:New(Idx, Config)
 		}),
 	})
 
-	local PickerHolder = New("Frame", {
+	-- the picker is a bounded, scrollable tray so a long list can't shove the
+	-- whole card off the bottom of the screen ~
+	local PICKER_MAX_H = 140
+
+	local PickerHolder = New("ScrollingFrame", {
 		BackgroundTransparency = 1,
 		Visible = false,
 		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		LayoutOrder = 4,
+		LayoutOrder = 5,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Color3.fromRGB(200, 200, 200),
+		ScrollBarImageTransparency = 0.5,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticCanvasSize.Y,
 	}, {
 		New("UIListLayout", {
 			Padding = UDim.new(0, 2),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
 	})
+
+	local pickerConn -- outside-click listener while the tray is open
+	local pickerOwner -- the field/button that opened the tray
 
 	local Card = New("Frame", {
 		Size = UDim2.new(1, 0, 0, 0),
@@ -299,14 +314,35 @@ function Element:New(Idx, Config)
 	local function ClosePicker()
 		PickerHolder.Visible = false
 		ClearChildren(PickerHolder)
+		if pickerConn then
+			pickerConn:Disconnect()
+			pickerConn = nil
+		end
+		pickerOwner = nil
 	end
 
-	local function OpenPicker(values, used, onPick)
-		ClearChildren(PickerHolder)
-		local any = false
+	local function PointInside(guiObject, pos)
+		if not guiObject then
+			return false
+		end
+		local p = guiObject.AbsolutePosition
+		local s = guiObject.AbsoluteSize
+		return pos.X >= p.X and pos.X <= p.X + s.X and pos.Y >= p.Y and pos.Y <= p.Y + s.Y
+	end
+
+	local function OpenPicker(values, used, onPick, owner)
+		-- tap the same field again to close it ~
+		if PickerHolder.Visible and pickerOwner == owner then
+			ClosePicker()
+			return
+		end
+		ClosePicker()
+		pickerOwner = owner
+
+		local count = 0
 		for i, val in ipairs(values) do
 			if not (used and used[val]) then
-				any = true
+				count = count + 1
 				local opt = New("TextButton", {
 					Text = tostring(val),
 					FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json"),
@@ -325,12 +361,34 @@ function Element:New(Idx, Config)
 					New("UIPadding", { PaddingLeft = UDim.new(0, 8) }),
 				})
 				AddSignal(opt.MouseButton1Click, function()
+					local picked = val
 					ClosePicker()
-					onPick(val)
+					onPick(picked)
 				end)
 			end
 		end
-		PickerHolder.Visible = any
+
+		if count == 0 then
+			ClosePicker()
+			return
+		end
+
+		-- cap the height: scroll instead of growing past the screen
+		local contentH = count * 26 + (count - 1) * 2
+		PickerHolder.Size = UDim2.new(1, 0, 0, math.min(contentH, PICKER_MAX_H))
+		PickerHolder.Visible = true
+
+		-- tap anywhere outside the tray (and outside the field) to dismiss
+		pickerConn = UserInputService.InputBegan:Connect(function(input)
+			if
+				input.UserInputType == Enum.UserInputType.MouseButton1
+				or input.UserInputType == Enum.UserInputType.Touch
+			then
+				if not PointInside(PickerHolder, input.Position) and not PointInside(owner, input.Position) then
+					ClosePicker()
+				end
+			end
+		end)
 	end
 
 	-- ===== cell builders =============================================
@@ -396,9 +454,17 @@ function Element:New(Idx, Config)
 		for i, row in ipairs(Table.Rows) do
 			local RowFrame = New("Frame", {
 				Size = UDim2.new(1, 0, 0, ROW_H),
-				BackgroundTransparency = 1,
+				BackgroundTransparency = 0.4,
+				BackgroundColor3 = Color3.fromRGB(130, 130, 130),
 				LayoutOrder = i,
 				Parent = RowsHolder,
+				ThemeTag = { BackgroundColor3 = "Element" },
+			}, {
+				New("UICorner", { CornerRadius = UDim.new(0, 5) }),
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, 8),
+					PaddingRight = UDim.new(0, 6),
+				}),
 			})
 
 			local Cells = New("Frame", {
@@ -445,7 +511,7 @@ function Element:New(Idx, Config)
 							row.Cells[c] = Coerce(c, val)
 							btn.Text = tostring(row.Cells[c])
 							Table:FireChanged()
-						end)
+						end, btn)
 					end)
 				else
 					local tb = MakeTextboxCell(Cells, CellScale, order, tostring(row.Cells[c]), col.Placeholder)
@@ -468,10 +534,20 @@ function Element:New(Idx, Config)
 	end
 
 	-- ===== the add-a-row controls ====================================
+	-- a divider so the "add new" area reads as separate from committed rows ~
+	local Separator = New("Frame", {
+		Size = UDim2.new(1, 0, 0, 1),
+		BackgroundTransparency = 0.85,
+		BorderSizePixel = 0,
+		LayoutOrder = 3,
+		Parent = Card,
+		ThemeTag = { BackgroundColor3 = "ElementBorder" },
+	})
+
 	local AddRow = New("Frame", {
 		Size = UDim2.new(1, 0, 0, ROW_H),
 		BackgroundTransparency = 1,
-		LayoutOrder = 3,
+		LayoutOrder = 4,
 		Parent = Card,
 	})
 
@@ -511,7 +587,7 @@ function Element:New(Idx, Config)
 				OpenPicker(KeyValues, used, function(val)
 					addKeyChoice = val
 					addKeyButton.Text = tostring(val)
-				end)
+				end, addKeyButton)
 			end)
 		else
 			local tb = MakeTextboxCell(AddCells, CellScale, order, "", KeyCfg.Placeholder or "Key")
@@ -534,7 +610,7 @@ function Element:New(Idx, Config)
 				OpenPicker(col.Values or {}, nil, function(val)
 					addChoices[c] = val
 					btn.Text = tostring(val)
-				end)
+				end, btn)
 			end)
 		else
 			local initial = col.Default ~= nil and tostring(col.Default) or ""
@@ -622,6 +698,7 @@ function Element:New(Idx, Config)
 
 	-- ===== boot it up ~ ===============================================
 	function Table:Destroy()
+		ClosePicker()
 		Card:Destroy()
 		Library.Options[Idx] = nil
 	end
