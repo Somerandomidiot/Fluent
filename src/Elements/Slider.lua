@@ -100,21 +100,34 @@ function Element:New(Idx, Config)
 		SliderRail,
 	})
 
-	Creator.AddSignal(SliderDot.InputBegan, function(Input)
+	-- a taller, invisible touch target over the 4px rail so fingers can actually
+	-- grab it on mobile (you can tap/drag anywhere along the track) ~
+	local SliderHit = New("Frame", {
+		BackgroundTransparency = 1,
+		Active = true,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.new(1, 0, 0, 28),
+		Parent = SliderFrame.Frame,
+	}, {
+		New("UISizeConstraint", {
+			MaxSize = Vector2.new(150, math.huge),
+		}),
+	})
+
+	local function SetValueFromX(X)
+		local SizeScale = math.clamp((X - SliderRail.AbsolutePosition.X) / SliderRail.AbsoluteSize.X, 0, 1)
+		Slider:SetValue(Slider.Min + ((Slider.Max - Slider.Min) * SizeScale))
+	end
+
+	-- start dragging from anywhere on the track, and jump straight to the tap
+	Creator.AddSignal(SliderHit.InputBegan, function(Input)
 		if
 			Input.UserInputType == Enum.UserInputType.MouseButton1
 			or Input.UserInputType == Enum.UserInputType.Touch
 		then
 			Dragging = true
-		end
-	end)
-
-	Creator.AddSignal(SliderDot.InputEnded, function(Input)
-		if
-			Input.UserInputType == Enum.UserInputType.MouseButton1
-			or Input.UserInputType == Enum.UserInputType.Touch
-		then
-			Dragging = false
+			SetValueFromX(Input.Position.X)
 		end
 	end)
 
@@ -126,9 +139,17 @@ function Element:New(Idx, Config)
 				or Input.UserInputType == Enum.UserInputType.Touch
 			)
 		then
-			local SizeScale =
-				math.clamp((Input.Position.X - SliderRail.AbsolutePosition.X) / SliderRail.AbsoluteSize.X, 0, 1)
-			Slider:SetValue(Slider.Min + ((Slider.Max - Slider.Min) * SizeScale))
+			SetValueFromX(Input.Position.X)
+		end
+	end)
+
+	-- listen for release globally so it still stops if the finger lifts off the bar
+	Creator.AddSignal(UserInputService.InputEnded, function(Input)
+		if
+			Input.UserInputType == Enum.UserInputType.MouseButton1
+			or Input.UserInputType == Enum.UserInputType.Touch
+		then
+			Dragging = false
 		end
 	end)
 
