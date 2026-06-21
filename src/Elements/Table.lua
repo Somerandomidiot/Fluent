@@ -1,16 +1,16 @@
 -- Table.lua
--- a dynamic lil config-table editor for Fluent ~ 🌸
--- handles all the shapes you usually end up wanting in a config:
+-- A dynamic config-table editor element for Fluent. Supports the table shapes
+-- commonly used in configuration data:
 --
 --   Map + single value   ->  { ["Carrot"] = 50, ["Strawberry"] = 50 }
---   Map + multi value     ->  { ["Pet1"] = {1, 10, 10} }
+--   Map + multiple values ->  { ["Pet1"] = {1, 10, 10} }
 --   List of rows          ->  { {"Pet1", 1, 10}, {"Pet2", 5, 20} }
 --
--- keys/names can come from a fixed list (a lil picker) OR be typed freely,
--- rows can be added/removed and every value is editable, and it saves through
--- SaveManager so your configs actually persist ^^
+-- Keys/names may be selected from a fixed list or typed freely, rows can be
+-- added and removed, every value is editable, and the element registers in
+-- Library.Options so SaveManager persists it automatically.
 --
--- usage ~
+-- Usage:
 --   Tab:AddTable("Crops", {
 --       Title = "Crop amounts",
 --       Mode = "Map",                       -- "Map" | "List"   (default "Map")
@@ -20,7 +20,8 @@
 --       Callback = function(v) print(v) end,
 --   })
 --
--- column types: "Number" | "String" | "Dropdown" (Dropdown needs Values = {..})
+-- Column types: "Number" | "String" | "Dropdown" (Dropdown requires Values).
+-- Dropdown columns are unique by default (Unique = false to allow repeats).
 
 local Root = script.Parent.Parent
 local Creator = require(Root.Creator)
@@ -47,15 +48,22 @@ function Element:New(Idx, Config)
 	local KeyValues = KeyCfg.Values or {}
 	local KeyUnique = KeyCfg.Unique ~= false
 
-	-- normalize columns ~
+	-- Normalize column definitions. Dropdown columns are treated as unique by
+	-- default (a given value may be used by at most one row); this can be
+	-- overridden per column with Unique = false.
 	local Columns = {}
 	for i, col in ipairs(Config.Columns or {}) do
+		local unique = col.Unique
+		if unique == nil then
+			unique = (col.Type == "Dropdown")
+		end
 		Columns[i] = {
 			Name = col.Name or ("Col" .. i),
 			Type = col.Type or "Number",
 			Values = col.Values,
 			Default = col.Default,
 			Placeholder = col.Placeholder or col.Name or "",
+			Unique = unique,
 		}
 	end
 	if #Columns == 0 then
@@ -73,7 +81,7 @@ function Element:New(Idx, Config)
 		Changed = nil,
 	}
 
-	-- coerce a raw cell into the right type for column c ~
+	-- coerce a raw cell into the right type for column c
 	local function Coerce(c, raw)
 		local col = Columns[c]
 		if col.Type == "Number" then
@@ -92,6 +100,31 @@ function Element:New(Idx, Config)
 
 	local function DefaultCell(c)
 		return Coerce(c, Columns[c].Default)
+	end
+
+	-- Returns a map of value -> row index for the values currently used in
+	-- column c, optionally excluding a single row (used when editing in place).
+	local function UsedInColumn(c, excludeRow)
+		local map = {}
+		for ri, r in ipairs(Table.Rows) do
+			if ri ~= excludeRow then
+				map[r.Cells[c]] = ri
+			end
+		end
+		return map
+	end
+
+	-- Returns the first value in column c's list that is not already in use,
+	-- or nil if every value is taken.
+	local function FirstAvailable(c)
+		local col = Columns[c]
+		local used = UsedInColumn(c, nil)
+		for _, v in ipairs(col.Values or {}) do
+			if used[v] == nil then
+				return v
+			end
+		end
+		return nil
 	end
 
 	-- ===== value get / set ============================================
@@ -121,7 +154,7 @@ function Element:New(Idx, Config)
 		return out
 	end
 
-	-- serialized form thats safe for SaveManager (just strings + numbers) ~
+	-- serialized form that is safe for SaveManager (strings and numbers only)
 	function Table:Serialize()
 		local rows = {}
 		for _, row in ipairs(Table.Rows) do
@@ -245,7 +278,7 @@ function Element:New(Idx, Config)
 	})
 
 	-- the picker is a bounded, scrollable tray so a long list can't shove the
-	-- whole card off the bottom of the screen ~
+	-- whole card off the bottom of the screen
 	local PICKER_MAX_H = 140
 
 	local PickerHolder = New("ScrollingFrame", {
@@ -301,7 +334,7 @@ function Element:New(Idx, Config)
 		PickerHolder,
 	})
 
-	-- ===== lil shared inline picker (no clipping headaches~) ===========
+	-- ===== shared inline picker ===========
 	local function ClearChildren(frame)
 		for _, ch in ipairs(frame:GetChildren()) do
 			if not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then
@@ -330,7 +363,7 @@ function Element:New(Idx, Config)
 	end
 
 	local function OpenPicker(values, used, onPick, owner)
-		-- tap the same field again to close it ~
+		-- tap the same field again to close it
 		if PickerHolder.Visible and pickerOwner == owner then
 			ClosePicker()
 			return
@@ -454,17 +487,9 @@ function Element:New(Idx, Config)
 		for i, row in ipairs(Table.Rows) do
 			local RowFrame = New("Frame", {
 				Size = UDim2.new(1, 0, 0, ROW_H),
-				BackgroundTransparency = 0.4,
-				BackgroundColor3 = Color3.fromRGB(130, 130, 130),
+				BackgroundTransparency = 1,
 				LayoutOrder = i,
 				Parent = RowsHolder,
-				ThemeTag = { BackgroundColor3 = "Element" },
-			}, {
-				New("UICorner", { CornerRadius = UDim.new(0, 5) }),
-				New("UIPadding", {
-					PaddingLeft = UDim.new(0, 8),
-					PaddingRight = UDim.new(0, 6),
-				}),
 			})
 
 			local Cells = New("Frame", {
@@ -482,7 +507,7 @@ function Element:New(Idx, Config)
 
 			local order = 0
 
-			-- key label (Map only) ~
+			-- key label (Map only)
 			if Mode == "Map" then
 				order = order + 1
 				New("TextLabel", {
@@ -499,17 +524,28 @@ function Element:New(Idx, Config)
 				})
 			end
 
-			-- value cells ~
+			-- value cells
 			for c = 1, #Columns do
 				order = order + 1
 				local col = Columns[c]
 
 				if col.Type == "Dropdown" then
+					local rowIndex = i
 					local btn = MakeChoiceCell(Cells, CellScale, order, row.Cells[c])
 					AddSignal(btn.MouseButton1Click, function()
+						-- The picker shows every value: choosing one already held by
+						-- another row swaps the two rows' values for that column,
+						-- which keeps the column unique while allowing reordering.
 						OpenPicker(col.Values or {}, nil, function(val)
-							row.Cells[c] = Coerce(c, val)
-							btn.Text = tostring(row.Cells[c])
+							local newVal = Coerce(c, val)
+							if col.Unique then
+								local owner = UsedInColumn(c, rowIndex)[newVal]
+								if owner ~= nil then
+									Table.Rows[owner].Cells[c] = row.Cells[c]
+								end
+							end
+							row.Cells[c] = newVal
+							Render()
 							Table:FireChanged()
 						end, btn)
 					end)
@@ -523,7 +559,7 @@ function Element:New(Idx, Config)
 				end
 			end
 
-			-- remove button ~
+			-- remove button
 			local rm = MakeMiniButton(RowFrame, "-", false)
 			AddSignal(rm.MouseButton1Click, function()
 				table.remove(Table.Rows, i)
@@ -534,14 +570,16 @@ function Element:New(Idx, Config)
 	end
 
 	-- ===== the add-a-row controls ====================================
-	-- a divider so the "add new" area reads as separate from committed rows ~
+	-- Grey divider bar separating the committed rows above from the add-row below.
 	local Separator = New("Frame", {
-		Size = UDim2.new(1, 0, 0, 1),
-		BackgroundTransparency = 0.85,
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundTransparency = 0.3,
 		BorderSizePixel = 0,
 		LayoutOrder = 3,
 		Parent = Card,
 		ThemeTag = { BackgroundColor3 = "ElementBorder" },
+	}, {
+		New("UICorner", { CornerRadius = UDim.new(1, 0) }),
 	})
 
 	local AddRow = New("Frame", {
@@ -599,15 +637,26 @@ function Element:New(Idx, Config)
 		order = order + 1
 		local col = Columns[c]
 		if col.Type == "Dropdown" then
-			local cur = col.Default
-			if cur == nil and col.Values then
-				cur = col.Values[1]
+			local cur
+			if col.Unique then
+				cur = FirstAvailable(c)
+			else
+				cur = col.Default
+				if cur == nil and col.Values then
+					cur = col.Values[1]
+				end
 			end
 			addChoices[c] = cur
 			local btn = MakeChoiceCell(AddCells, CellScale, order, cur ~= nil and tostring(cur) or "Pick..")
 			addButtons[c] = btn
 			AddSignal(btn.MouseButton1Click, function()
-				OpenPicker(col.Values or {}, nil, function(val)
+				-- Unique columns hide values already used by a row, so the picker
+				-- shows nothing once every option is taken.
+				local used = nil
+				if col.Unique then
+					used = UsedInColumn(c, nil)
+				end
+				OpenPicker(col.Values or {}, used, function(val)
 					addChoices[c] = val
 					btn.Text = tostring(val)
 				end, btn)
@@ -633,9 +682,14 @@ function Element:New(Idx, Config)
 				addInputs[c].Text = col.Default ~= nil and tostring(col.Default) or ""
 			end
 			if addButtons[c] then
-				local cur = col.Default
-				if cur == nil and col.Values then
-					cur = col.Values[1]
+				local cur
+				if col.Unique then
+					cur = FirstAvailable(c)
+				else
+					cur = col.Default
+					if cur == nil and col.Values then
+						cur = col.Values[1]
+					end
 				end
 				addChoices[c] = cur
 				addButtons[c].Text = cur ~= nil and tostring(cur) or "Pick.."
@@ -670,6 +724,21 @@ function Element:New(Idx, Config)
 			end
 		end
 
+		-- Reject rows that would duplicate a value in a unique column (e.g. when
+		-- every option is already taken).
+		for c = 1, #Columns do
+			local col = Columns[c]
+			if col.Type == "Dropdown" and col.Unique then
+				local v = addChoices[c]
+				if v == nil then
+					return Notify("No options left for " .. col.Name)
+				end
+				if UsedInColumn(c, nil)[v] ~= nil then
+					return Notify(col.Name .. " \"" .. tostring(v) .. "\" is already used")
+				end
+			end
+		end
+
 		local cells = {}
 		for c = 1, #Columns do
 			local col = Columns[c]
@@ -696,7 +765,7 @@ function Element:New(Idx, Config)
 	local addBtn = MakeMiniButton(AddRow, "+", true)
 	AddSignal(addBtn.MouseButton1Click, DoAdd)
 
-	-- ===== boot it up ~ ===============================================
+	-- ===== initialise         ===============================================
 	function Table:Destroy()
 		ClosePicker()
 		Card:Destroy()
