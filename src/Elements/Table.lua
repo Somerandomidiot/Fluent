@@ -573,11 +573,11 @@ function Element:New(Idx, Config)
 	-- Grey divider bar separating the committed rows above from the add-row below.
 	local Separator = New("Frame", {
 		Size = UDim2.new(1, 0, 0, 2),
-		BackgroundTransparency = 0.3,
+		BackgroundTransparency = 0.4,
 		BorderSizePixel = 0,
 		LayoutOrder = 3,
 		Parent = Card,
-		ThemeTag = { BackgroundColor3 = "ElementBorder" },
+		ThemeTag = { BackgroundColor3 = "SubText" },
 	}, {
 		New("UICorner", { CornerRadius = UDim.new(1, 0) }),
 	})

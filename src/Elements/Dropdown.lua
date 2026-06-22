@@ -146,33 +146,46 @@ function Element:New(Idx, Config)
 	})
 	table.insert(Library.OpenFrames, DropdownHolderCanvas)
 
-	local function RecalculateListPosition()
-		local Add = 0
-		if Camera.ViewportSize.Y - DropdownInner.AbsolutePosition.Y < DropdownHolderCanvas.AbsoluteSize.Y - 5 then
-			Add = DropdownHolderCanvas.AbsoluteSize.Y
-				- 5
-				- (Camera.ViewportSize.Y - DropdownInner.AbsolutePosition.Y)
-				+ 40
+	local ListSizeX = 0
+	local ListSizeY = 0
+
+	local function RecalculateListSize()
+		local Desired
+		if #Dropdown.Values > 10 then
+			Desired = 392
+		else
+			Desired = DropdownListLayout.AbsoluteContentSize.Y + 10
 		end
-		DropdownHolderCanvas.Position =
-			UDim2.fromOffset(DropdownInner.AbsolutePosition.X - 1, DropdownInner.AbsolutePosition.Y - 5 - Add)
+		-- Never allow the list to exceed the screen height (keep a small margin).
+		local MaxHeight = Camera.ViewportSize.Y - 40
+		if Desired > MaxHeight then
+			Desired = MaxHeight
+		end
+		ListSizeY = Desired
+		DropdownHolderCanvas.Size = UDim2.fromOffset(ListSizeX, Desired)
 	end
 
-	local ListSizeX = 0
-	local function RecalculateListSize()
-		if #Dropdown.Values > 10 then
-			DropdownHolderCanvas.Size = UDim2.fromOffset(ListSizeX, 392)
-		else
-			DropdownHolderCanvas.Size = UDim2.fromOffset(ListSizeX, DropdownListLayout.AbsoluteContentSize.Y + 10)
+	local function RecalculateListPosition()
+		local Height = ListSizeY > 0 and ListSizeY or DropdownHolderCanvas.AbsoluteSize.Y
+		local ViewportY = Camera.ViewportSize.Y
+		local Y = DropdownInner.AbsolutePosition.Y - 5
+		-- Open upward if opening downward would run past the bottom of the screen.
+		if Y + Height > ViewportY - 10 then
+			Y = ViewportY - 10 - Height
 		end
+		-- Keep the list fully on screen.
+		if Y < 10 then
+			Y = 10
+		end
+		DropdownHolderCanvas.Position = UDim2.fromOffset(DropdownInner.AbsolutePosition.X - 1, Y)
 	end
 
 	local function RecalculateCanvasSize()
 		DropdownScrollFrame.CanvasSize = UDim2.fromOffset(0, DropdownListLayout.AbsoluteContentSize.Y)
 	end
 
-	RecalculateListPosition()
 	RecalculateListSize()
+	RecalculateListPosition()
 
 	Creator.AddSignal(DropdownInner:GetPropertyChangedSignal("AbsolutePosition"), RecalculateListPosition)
 
@@ -201,6 +214,8 @@ function Element:New(Idx, Config)
 	function Dropdown:Open()
 		Dropdown.Opened = true
 		ScrollFrame.ScrollingEnabled = false
+		RecalculateListSize()
+		RecalculateListPosition()
 		DropdownHolderCanvas.Visible = true
 		TweenService:Create(
 			DropdownHolderFrame,
@@ -357,33 +372,54 @@ function Element:New(Idx, Config)
 				SetSelTransparency(Selected and 0 or 1)
 			end
 
-			ButtonLabel.InputBegan:Connect(function(Input)
+			-- Select on release rather than on press, and only when the touch did
+			-- not move (a moved touch is a scroll, not a tap). This lets mobile
+			-- users scroll the list without accidentally selecting an option.
+			local PressStart
+
+			local function Select()
+				local Try = not Selected
+
+				if Dropdown:GetActiveValues() == 1 and not Try and not Config.AllowNull then
+				else
+					if Config.Multi then
+						Selected = Try
+						Dropdown.Value[Value] = Selected and true or nil
+					else
+						Selected = Try
+						Dropdown.Value = Selected and Value or nil
+
+						for _, OtherButton in next, Buttons do
+							OtherButton:UpdateButton()
+						end
+					end
+
+					Table:UpdateButton()
+					Dropdown:Display()
+
+					Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
+					Library:SafeCallback(Dropdown.Changed, Dropdown.Value)
+				end
+			end
+
+			Creator.AddSignal(Button.InputBegan, function(Input)
 				if
 					Input.UserInputType == Enum.UserInputType.MouseButton1
 					or Input.UserInputType == Enum.UserInputType.Touch
 				then
-					local Try = not Selected
+					PressStart = Input.Position
+				end
+			end)
 
-					if Dropdown:GetActiveValues() == 1 and not Try and not Config.AllowNull then
-					else
-						if Config.Multi then
-							Selected = Try
-							Dropdown.Value[Value] = Selected and true or nil
-						else
-							Selected = Try
-							Dropdown.Value = Selected and Value or nil
-
-							for _, OtherButton in next, Buttons do
-								OtherButton:UpdateButton()
-							end
-						end
-
-						Table:UpdateButton()
-						Dropdown:Display()
-
-						Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
-						Library:SafeCallback(Dropdown.Changed, Dropdown.Value)
+			Creator.AddSignal(Button.InputEnded, function(Input)
+				if
+					Input.UserInputType == Enum.UserInputType.MouseButton1
+					or Input.UserInputType == Enum.UserInputType.Touch
+				then
+					if PressStart and (Input.Position - PressStart).Magnitude <= 10 then
+						Select()
 					end
+					PressStart = nil
 				end
 			end)
 
