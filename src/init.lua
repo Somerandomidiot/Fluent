@@ -79,10 +79,10 @@ function Library:Round(Number, Factor)
 	return Number:find("%.") and tonumber(Number:sub(1, Number:find("%.") + Factor)) or Number
 end
 
-local Icons = require(Root.Icons).assets
+local Icons = require(Root.Icons)
 function Library:GetIcon(Name)
-	if Name ~= nil and Icons["lucide-" .. Name] then
-		return Icons["lucide-" .. Name]
+	if Name ~= nil and Icons[Name] then
+		return Icons[Name]
 	end
 	return nil
 end
