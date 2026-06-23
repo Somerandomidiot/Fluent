@@ -149,6 +149,16 @@ function Element:New(Idx, Config)
 	local ListSizeX = 0
 	local ListSizeY = 0
 
+	-- Returns the top Y and the height of the window, so the list can be kept
+	-- inside it rather than spilling across the whole screen.
+	local function WindowBounds()
+		local WindowRoot = Library.Window and Library.Window.Root
+		if WindowRoot then
+			return WindowRoot.AbsolutePosition.Y, WindowRoot.AbsoluteSize.Y
+		end
+		return 0, Camera.ViewportSize.Y
+	end
+
 	local function RecalculateListSize()
 		local Desired
 		if #Dropdown.Values > 10 then
@@ -156,8 +166,10 @@ function Element:New(Idx, Config)
 		else
 			Desired = DropdownListLayout.AbsoluteContentSize.Y + 10
 		end
-		-- Never allow the list to exceed the screen height (keep a small margin).
-		local MaxHeight = Camera.ViewportSize.Y - 40
+		-- Keep the list inside the window (with a small margin); it scrolls
+		-- internally when the content is taller than this.
+		local _, WindowHeight = WindowBounds()
+		local MaxHeight = WindowHeight - 20
 		if Desired > MaxHeight then
 			Desired = MaxHeight
 		end
@@ -167,15 +179,16 @@ function Element:New(Idx, Config)
 
 	local function RecalculateListPosition()
 		local Height = ListSizeY > 0 and ListSizeY or DropdownHolderCanvas.AbsoluteSize.Y
-		local ViewportY = Camera.ViewportSize.Y
+		local WindowTop, WindowHeight = WindowBounds()
+		local WindowBottom = WindowTop + WindowHeight
 		local Y = DropdownInner.AbsolutePosition.Y - 5
-		-- Open upward if opening downward would run past the bottom of the screen.
-		if Y + Height > ViewportY - 10 then
-			Y = ViewportY - 10 - Height
+		-- Open upward if opening downward would run past the window bottom.
+		if Y + Height > WindowBottom - 10 then
+			Y = WindowBottom - 10 - Height
 		end
-		-- Keep the list fully on screen.
-		if Y < 10 then
-			Y = 10
+		-- Keep the list within the window's top edge.
+		if Y < WindowTop + 10 then
+			Y = WindowTop + 10
 		end
 		DropdownHolderCanvas.Position = UDim2.fromOffset(DropdownInner.AbsolutePosition.X - 1, Y)
 	end

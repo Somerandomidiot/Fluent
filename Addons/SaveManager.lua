@@ -76,6 +76,17 @@ local SaveManager = {} do
 				end
 			end,
 		},
+
+		Range = {
+			Save = function(idx, object)
+				return { type = "Range", idx = idx, value = { Min = object.Value.Min, Max = object.Value.Max } }
+			end,
+			Load = function(idx, data)
+				if SaveManager.Options[idx] and type(data.value) == "table" then
+					SaveManager.Options[idx]:SetValue(data.value)
+				end
+			end,
+		},
 	}
 
 	function SaveManager:SetIgnoreIndexes(list)
